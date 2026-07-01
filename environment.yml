@@ -13,4 +13,5 @@ dependencies:
   - matplotlib
   - seaborn
   - jupyter
+  - reportlab
   - pip

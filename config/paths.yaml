@@ -6,8 +6,13 @@ dataset:
 outputs:
   root: "outputs"
   tables: "outputs/tables"
+  figures: "outputs/figures"
   confusion_matrices: "outputs/confusion_matrices"
   per_class: "outputs/per_class"
+  # Cache de estimadores por (target, modelo). Solo se llena cuando se
+  # ejecuta con --keep-estimators. Se usa para tests de significancia
+  # sin reentrenar la validacion anidada.
+  estimator_cache: "outputs/estimator_cache"
 
 experiment:
   targets:
@@ -18,13 +23,15 @@ experiment:
     - "GDS_R4"
     - "GDS_R5"
 
-  # Orden didáctico de ejecución:
+  # Orden didactico de ejecucion:
   # 1) se ejecutan todos los modelos con GridSearchCV;
   # 2) luego se ejecutan todos los modelos con RandomizedSearchCV.
+  # Dummy se incluye como cota inferior en ambos experimentos.
   experiments:
     - name: "grid_all"
       search_type: "grid"
       models:
+        - "dummy"
         - "bagging"
         - "adaboost"
         - "stacking"
@@ -33,6 +40,7 @@ experiment:
     - name: "random_all"
       search_type: "random"
       models:
+        - "dummy"
         - "bagging"
         - "adaboost"
         - "stacking"
@@ -56,68 +64,97 @@ experiment:
 hyperparameter_search:
   default:
     scoring: "f1_macro"
-    random_n_iter: 12
+    # 40 extracciones para random_all: mas amplio porque
+    # los espacios de busqueda de los ensambles son mas grandes.
+    random_n_iter: 40
 
   grid:
     models:
+      dummy:
+        enabled: true
+        params: {}
+
       bagging:
         enabled: true
         params:
-          clf__n_estimators: [25, 50]
+          clf__n_estimators: [50, 100, 200]
           clf__max_samples: [0.7, 1.0]
-          clf__estimator__max_depth: [2, null]
+          clf__max_features: [0.5, 1.0]
+          clf__estimator__max_depth: [3, 5, null]
+          clf__estimator__min_samples_leaf: [1, 5]
+          # Probar con y sin balanceo: el grid decide.
+          clf__estimator__class_weight: [null, "balanced"]
 
       adaboost:
         enabled: true
         params:
-          clf__n_estimators: [25, 50, 100]
-          clf__learning_rate: [0.5, 1.0]
-          clf__estimator__max_depth: [2, 3]
+          clf__n_estimators: [50, 100, 200]
+          clf__learning_rate: [0.05, 0.1, 0.5, 1.0]
+          # Stumps (1) suelen ganar con desbalance; se prueban 2 y 3 tambien.
+          clf__estimator__max_depth: [1, 2, 3]
 
       stacking:
         enabled: true
         params:
-          clf__final_C: [0.1, 1.0]
-          clf__tree_max_depth: [2, null]
-          clf__n_neighbors: [3, 7]
+          clf__final_C: [0.1, 1.0, 10.0]
+          clf__logistic_C: [0.1, 1.0, 10.0]
+          clf__tree_max_depth: [3, null]
+          clf__n_neighbors: [3, 7, 11]
+          # passthrough permite que el meta-clasificador vea los features originales.
+          clf__passthrough: [false, true]
 
       gradient_boosting:
         enabled: true
         params:
-          clf__n_estimators: [50, 100]
-          clf__learning_rate: [0.05, 0.1]
+          clf__n_estimators: [50, 100, 200]
+          clf__learning_rate: [0.05, 0.1, 0.2]
           clf__max_depth: [2, 3]
-          clf__subsample: [0.8, 1.0]
+          clf__subsample: [0.7, 1.0]
+          clf__min_samples_leaf: [1, 5]
 
   random:
     models:
+      dummy:
+        enabled: true
+        distributions: {}
+
       bagging:
         enabled: true
         distributions:
           clf__n_estimators:
             dist: "randint"
-            low: 25
-            high: 151
+            low: 50
+            high: 501
           clf__max_samples:
             dist: "uniform"
-            low: 0.6
+            low: 0.5
+            high: 1.0
+          clf__max_features:
+            dist: "uniform"
+            low: 0.5
             high: 1.0
           clf__estimator__max_depth:
-            values: [2, 3, 4, null]
+            values: [1, 2, 3, 5, null]
+          clf__estimator__min_samples_leaf:
+            dist: "randint"
+            low: 1
+            high: 6
+          clf__estimator__class_weight:
+            values: [null, "balanced"]
 
       adaboost:
         enabled: true
         distributions:
           clf__n_estimators:
             dist: "randint"
-            low: 25
-            high: 151
+            low: 50
+            high: 401
           clf__learning_rate:
-            dist: "uniform"
-            low: 0.5
-            high: 1.0
+            dist: "loguniform"
+            low: 0.05
+            high: 1.5
           clf__estimator__max_depth:
-            values: [2, 3]
+            values: [1, 2, 3]
 
       stacking:
         enabled: true
@@ -126,29 +163,39 @@ hyperparameter_search:
             dist: "loguniform"
             low: 0.01
             high: 10.0
+          clf__logistic_C:
+            dist: "loguniform"
+            low: 0.01
+            high: 10.0
           clf__tree_max_depth:
-            values: [2, 3, 4, null]
+            values: [2, 3, null]
           clf__n_neighbors:
             dist: "randint"
             low: 3
-            high: 12
+            high: 16
+          clf__passthrough:
+            values: [false, true]
 
       gradient_boosting:
         enabled: true
         distributions:
           clf__n_estimators:
             dist: "randint"
-            low: 50
-            high: 151
+            low: 100
+            high: 501
           clf__learning_rate:
             dist: "loguniform"
             low: 0.01
-            high: 0.5
+            high: 0.3
           clf__max_depth:
             dist: "randint"
             low: 2
-            high: 5
+            high: 6
           clf__subsample:
             dist: "uniform"
-            low: 0.7
+            low: 0.6
             high: 1.0
+          clf__min_samples_leaf:
+            dist: "randint"
+            low: 1
+            high: 6
