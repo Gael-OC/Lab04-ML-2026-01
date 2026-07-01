@@ -6,7 +6,12 @@ from typing import Any
 
 import numpy as np
 from sklearn.base import BaseEstimator, ClassifierMixin, clone
-from sklearn.ensemble import AdaBoostClassifier, BaggingClassifier, GradientBoostingClassifier
+from sklearn.dummy import DummyClassifier
+from sklearn.ensemble import (
+    AdaBoostClassifier,
+    BaggingClassifier,
+    GradientBoostingClassifier,
+)
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.neighbors import KNeighborsClassifier
@@ -25,7 +30,19 @@ class ModelSpec:
 
 
 class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
-    """Stacking compacto para que el laboratorio sea robusto con clases pequeñas."""
+    """Stacking compacto con tres bases y un meta-clasificador.
+
+    Bases: árbol de decisión, K-NN escalado, regresión logística escalada.
+    Meta: regresión logística con class_weight="balanced".
+
+    Predicciones out-of-fold (OOF) cuando el soporte mínimo de la clase
+    más rara en el set de entrenamiento es >= 2. Si no, cae a predicciones
+    in-sample; el sesgo queda documentado en `outputs/advertencias.txt`.
+
+    Si `passthrough=True`, concatena los features originales a las
+    meta-features antes del meta-clasificador. Sube el techo pero también
+    el riesgo de sobreajuste.
+    """
 
     def __init__(
         self,
@@ -35,6 +52,7 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
         tree_max_depth: int | None = 3,
         n_neighbors: int = 5,
         logistic_C: float = 1.0,
+        passthrough: bool = False,
     ) -> None:
         self.random_state = random_state
         self.cv = cv
@@ -42,6 +60,7 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
         self.tree_max_depth = tree_max_depth
         self.n_neighbors = n_neighbors
         self.logistic_C = logistic_C
+        self.passthrough = passthrough
 
     def fit(self, X: Any, y: Any) -> "RobustStackingClassifier":
         y_array = np.asarray(y)
@@ -57,6 +76,10 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
             meta_features = self._out_of_fold_meta_features(X, y_array, base_estimators, min_count)
         else:
             meta_features = self._in_sample_meta_features(X, y_array, base_estimators)
+
+        if self.passthrough:
+            X_array = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+            meta_features = np.hstack([meta_features, X_array])
 
         self.final_estimator_ = LogisticRegression(
             C=self.final_C,
@@ -157,7 +180,11 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
         return self._meta_features(X, fitted_estimators)
 
     def _meta_features_from_fitted(self, X: Any) -> np.ndarray:
-        return self._meta_features(X, self.estimators_)
+        meta_features = self._meta_features(X, self.estimators_)
+        if self.passthrough:
+            X_array = X.to_numpy() if hasattr(X, "to_numpy") else np.asarray(X)
+            meta_features = np.hstack([meta_features, X_array])
+        return meta_features
 
     def _meta_features(self, X: Any, estimators: list[tuple[str, BaseEstimator]]) -> np.ndarray:
         blocks = [self._aligned_predict_proba(estimator, X) for _, estimator in estimators]
@@ -179,12 +206,38 @@ def _safe_take(X: Any, indices: np.ndarray) -> Any:
     return X[indices]
 
 
+MODEL_ORDER: list[str] = [
+    "dummy",
+    "bagging",
+    "adaboost",
+    "stacking",
+    "gradient_boosting",
+]
+"""Orden canónico de los modelos en tablas, plots y tests pareados."""
+
+MODEL_DISPLAY_NAMES: dict[str, str] = {
+    "dummy": "Baseline (Dummy)",
+    "bagging": "Bagging",
+    "adaboost": "AdaBoost",
+    "stacking": "Stacking",
+    "gradient_boosting": "Gradient Boosting",
+}
+
+
 def build_model_registry(random_state: int = 42) -> dict[str, ModelSpec]:
-    weak_tree = DecisionTreeClassifier(
-        max_depth=2,
-        min_samples_leaf=1,
-        class_weight="balanced",
-        random_state=random_state,
+    """Registro de los cinco modelos del laboratorio (1 baseline + 4 ensambles)."""
+    dummy = ModelSpec(
+        key="dummy",
+        display_name="Baseline (Dummy)",
+        implemented=True,
+        pipeline=Pipeline(
+            [
+                (
+                    "clf",
+                    DummyClassifier(strategy="stratified", random_state=random_state),
+                ),
+            ]
+        ),
     )
 
     bagging = ModelSpec(
@@ -200,15 +253,22 @@ def build_model_registry(random_state: int = 42) -> dict[str, ModelSpec]:
                             class_weight="balanced",
                             random_state=random_state,
                         ),
-                        n_estimators=50,
+                        n_estimators=100,
                         max_samples=0.8,
+                        max_features=0.8,
                         bootstrap=True,
                         random_state=random_state,
-                        n_jobs=1,
                     ),
                 ),
             ]
         ),
+    )
+
+    # AdaBoost con stump (max_depth=1); el grid probará 1, 2 y 3.
+    weak_tree = DecisionTreeClassifier(
+        max_depth=1,
+        class_weight="balanced",
+        random_state=random_state,
     )
 
     adaboost = ModelSpec(
@@ -221,8 +281,8 @@ def build_model_registry(random_state: int = 42) -> dict[str, ModelSpec]:
                     "clf",
                     AdaBoostClassifier(
                         estimator=weak_tree,
-                        n_estimators=50,
-                        learning_rate=1.0,
+                        n_estimators=100,
+                        learning_rate=0.1,
                         random_state=random_state,
                     ),
                 ),
@@ -244,6 +304,8 @@ def build_model_registry(random_state: int = 42) -> dict[str, ModelSpec]:
                         final_C=1.0,
                         tree_max_depth=3,
                         n_neighbors=5,
+                        logistic_C=1.0,
+                        passthrough=False,
                     ),
                 ),
             ]
@@ -262,7 +324,8 @@ def build_model_registry(random_state: int = 42) -> dict[str, ModelSpec]:
                         n_estimators=100,
                         learning_rate=0.1,
                         max_depth=3,
-                        subsample=1.0,
+                        subsample=0.8,
+                        min_samples_leaf=3,
                         random_state=random_state,
                     ),
                 ),
@@ -271,6 +334,7 @@ def build_model_registry(random_state: int = 42) -> dict[str, ModelSpec]:
     )
 
     return {
+        dummy.key: dummy,
         bagging.key: bagging,
         adaboost.key: adaboost,
         stacking.key: stacking,
