@@ -6,46 +6,77 @@ import csv
 import json
 import textwrap
 
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    Image,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
-SUMMARY_COLUMNS = [
+
+# Columnas del CSV resumen.
+SUMMARY_COLUMNS: list[str] = [
+    # Identificación
     "experiment_name",
     "target",
     "model_name",
     "status",
     "n_min",
     "k_outer",
+    # Métricas
     "f1_macro_mean",
     "f1_macro_std",
     "balanced_accuracy_mean",
     "recall_macro_mean",
     "precision_macro_mean",
+    # Estabilidad e ICN
+    "stability_raw",
     "stability",
+    "icn_raw",
     "icn",
+    # Sesgo
+    "best_score_internal_mean",
+    "delta_sesgo",
+    # Búsqueda de hiperparámetros
     "search_type",
     "search_scoring",
     "search_n_iter",
     "best_params_mode",
+    # Miscelánea
     "message",
 ]
 
-PLAIN_TABLE_WIDTHS = [26, 16, 15, 15, 15, 15, 15, 28]
 
-
-def write_summary_csv(results_by_target: dict[str, list[dict[str, Any]]], output_path: Path) -> None:
+def write_summary_csv(
+    results_by_target: dict[str, list[dict[str, Any]]], output_path: Path
+) -> None:
     rows = [item for results in results_by_target.values() for item in results]
     with output_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS)
         writer.writeheader()
         for row in rows:
-            writer.writerow({column: _csv_value(row.get(column)) for column in SUMMARY_COLUMNS})
+            writer.writerow(
+                {column: _csv_value(row.get(column)) for column in SUMMARY_COLUMNS}
+            )
 
 
-def write_json_results(results_by_target: dict[str, list[dict[str, Any]]], output_path: Path) -> None:
+def write_json_results(
+    results_by_target: dict[str, list[dict[str, Any]]], output_path: Path
+) -> None:
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(results_by_target, handle, ensure_ascii=False, indent=2)
 
 
-def write_auxiliary_tables(results_by_target: dict[str, list[dict[str, Any]]], output_dirs: dict[str, Path]) -> None:
+def write_auxiliary_tables(
+    results_by_target: dict[str, list[dict[str, Any]]], output_dirs: dict[str, Path]
+) -> None:
     distributions_path = output_dirs["tables"] / "distribucion_clases.csv"
     with distributions_path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
@@ -63,20 +94,26 @@ def write_auxiliary_tables(results_by_target: dict[str, list[dict[str, Any]]], o
             _write_class_report(target, item, output_dirs["per_class"])
 
 
-def write_warnings(results_by_target: dict[str, list[dict[str, Any]]], output_path: Path) -> None:
+def write_warnings(
+    results_by_target: dict[str, list[dict[str, Any]]], output_path: Path
+) -> None:
     lines: list[str] = []
     for target, results in results_by_target.items():
         for item in results:
             for warning in item.get("warnings", []):
                 experiment_name = item.get("experiment_name", "experiment")
-                lines.append(f"[{experiment_name} | {target} | {item['model_name']}] {warning}")
+                lines.append(
+                    f"[{experiment_name} | {target} | {item['model_name']}] {warning}"
+                )
     if not lines:
         lines.append("No se registraron advertencias.")
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def write_latex_tables(results_by_target: dict[str, list[dict[str, Any]]], output_path: Path) -> None:
-    lines = [
+def write_latex_tables(
+    results_by_target: dict[str, list[dict[str, Any]]], output_path: Path
+) -> None:
+    lines: list[str] = [
         r"\documentclass{article}",
         r"\usepackage[utf8]{inputenc}",
         r"\usepackage[T1]{fontenc}",
@@ -85,10 +122,14 @@ def write_latex_tables(results_by_target: dict[str, list[dict[str, Any]]], outpu
         r"\usepackage{geometry}",
         r"\geometry{margin=1.5cm, landscape}",
         r"\begin{document}",
-        r"\section*{Laboratorio 04: resultados de clasificadores de ensamble}",
+        r"\section*{Laboratorio 04: clasificadores de ensamble}",
         (
-            "Se implementan Bagging, AdaBoost, Stacking y Gradient Boosting usando el mismo protocolo "
-            "de validaci\\'on cruzada anidada del Laboratorio 03."
+            "Bagging, AdaBoost, Stacking y Gradient Boosting evaluados con "
+            "validacion cruzada anidada. Se reportan F1 macro, balanced "
+            "accuracy, ICN crudo y normalizado, estabilidad y "
+            "$\\Delta$sesgo, además de las columnas de búsqueda "
+            "(experimento, search\_type, search\_scoring, search\_n\_iter, "
+            "best\_params\_mode)."
         ),
         "",
     ]
@@ -98,16 +139,20 @@ def write_latex_tables(results_by_target: dict[str, list[dict[str, Any]]], outpu
         lines.extend(
             [
                 rf"\subsection*{{Experimento {latex_escape(target)}}}",
-                rf"\noindent\textbf{{Distribuci\'on de clases:}} {latex_escape(distribution)}. "
+                rf"\noindent\textbf{{Distribucion de clases:}} {latex_escape(distribution)}. "
                 rf"\textbf{{n\_min:}} {results[0]['n_min']}. "
                 rf"\textbf{{k externo:}} {results[0]['k_outer']}.",
                 r"\begin{table}[h]",
                 r"\centering",
                 rf"\caption{{Resultados para {latex_escape(target)}}}",
                 r"\scriptsize",
-                r"\begin{tabular}{p{3.2cm}p{2.0cm}p{1.6cm}p{1.6cm}p{1.8cm}p{1.5cm}p{1.4cm}p{3.4cm}}",
+                r"\begin{tabular}{p{3.2cm}p{1.6cm}p{1.2cm}p{1.2cm}p{1.2cm}p{0.9cm}p{0.9cm}p{0.9cm}p{1.0cm}p{1.2cm}p{3.5cm}}",
                 r"\toprule",
-                r"Experimento / modelo & F1 macro & Balanced Acc. & Recall macro & Precisi\'on macro & Estab. & ICN & Hiperpar\'ametros / estado \\",
+                (
+                    r"Experimento / modelo & F1 macro & BalAcc & Recall & "
+                    r"Precisi\'on & ICN* & ICN & $\Delta$sesgo & Busq. & n\_iter & "
+                    r"Hiperpar\'ametros / estado \\"
+                ),
                 r"\midrule",
             ]
         )
@@ -126,32 +171,167 @@ def write_latex_tables(results_by_target: dict[str, list[dict[str, Any]]], outpu
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_pdf_tables(results_by_target: dict[str, list[dict[str, Any]]], output_path: Path) -> None:
-    pages: list[list[str]] = []
-    current: list[str] = [
-        "Laboratorio 04: resultados de clasificadores de ensamble",
-        "Bagging, AdaBoost, Stacking y Gradient Boosting evaluados con validación cruzada anidada.",
-        "",
-    ]
+def write_pdf_tables(
+    results_by_target: dict[str, list[dict[str, Any]]],
+    output_path: Path,
+    figures_dir: Path | None = None,
+) -> None:
+    """PDF con tablas, métricas y, si existe, figuras incrustadas.
+
+    Usa reportlab con fuentes TrueType (soporta acentos), imágenes
+    raster y tablas con estilo consistente. Las figuras que se incluyen
+    son las que `plots.py` guarda en `figures_dir/experiments/` y
+    `figures_dir/analysis/`.
+    """
+    styles = getSampleStyleSheet()
+    title_style = styles["Title"]
+    h2_style = styles["Heading2"]
+    body_style = styles["BodyText"]
+    body_style.fontSize = 9
+    body_style.leading = 12
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=landscape(A4),
+        leftMargin=1.5 * cm,
+        rightMargin=1.5 * cm,
+        topMargin=1.5 * cm,
+        bottomMargin=1.5 * cm,
+        title="Laboratorio 04: clasificadores de ensamble",
+    )
+
+    story: list[Any] = []
+    story.append(Paragraph("Laboratorio 04: clasificadores de ensamble", title_style))
+    story.append(
+        Paragraph(
+            "Bagging, AdaBoost, Stacking y Gradient Boosting evaluados con "
+            "validacion cruzada anidada. Se comparan las estrategias "
+            "grid\_all y random\_all, y se reportan F1 macro, balanced "
+            "accuracy, ICN crudo y normalizado, estabilidad y "
+            "$\\Delta$sesgo.",
+            body_style,
+        )
+    )
+    story.append(Spacer(1, 0.5 * cm))
+
+    # Figuras opcionales: heatmap F1 macro, comparativa grid vs random,
+    # comparativa entre laboratorios.
+    f1_heatmap = figures_dir / "experiments" / "f1_macro_heatmap.png" if figures_dir else None
+    grid_vs_random = figures_dir / "analysis" / "grid_vs_random_heatmap.png" if figures_dir else None
+    lab3_vs_lab4 = figures_dir / "analysis" / "lab3_vs_lab4_f1.png" if figures_dir else None
+
+    if f1_heatmap is not None and f1_heatmap.exists():
+        story.append(Paragraph("F1 macro por modelo y objetivo", h2_style))
+        story.append(Image(str(f1_heatmap), width=22 * cm, height=8 * cm))
+        story.append(Spacer(1, 0.5 * cm))
 
     for target, results in results_by_target.items():
-        block = _plain_table_block(target, results)
-        if len(current) + len(block) > 48:
-            pages.append(current)
-            current = []
-        current.extend(block)
-        current.append("")
-    if current:
-        pages.append(current)
+        story.append(Paragraph(f"Experimento {target}", h2_style))
+        distribution = _format_distribution(results[0]["class_distribution"])
+        n_min = results[0]["n_min"]
+        k_outer = results[0]["k_outer"]
+        story.append(
+            Paragraph(
+                f"Distribucion: {distribution}. n_min = {n_min}. k externo = {k_outer}.",
+                body_style,
+            )
+        )
+        story.append(Spacer(1, 0.3 * cm))
+        story.append(_build_reportlab_table(results))
+        story.append(PageBreak())
 
-    _write_simple_pdf(pages, output_path)
+    # Página final con figuras adicionales si existen.
+    extra_figures: list[tuple[str, Path, float, float]] = []
+    if grid_vs_random is not None and grid_vs_random.exists():
+        extra_figures.append(("Grid vs Random (F1 macro)", grid_vs_random, 22, 9))
+    if lab3_vs_lab4 is not None and lab3_vs_lab4.exists():
+        extra_figures.append(("Comparativa Lab 3 vs Lab 4 (F1 macro)", lab3_vs_lab4, 22, 8))
+
+    for title, path, w, h in extra_figures:
+        story.append(Paragraph(title, h2_style))
+        story.append(Image(str(path), width=w * cm, height=h * cm))
+        story.append(Spacer(1, 0.3 * cm))
+
+    doc.build(story)
 
 
-def _write_confusion_matrix(target: str, item: dict[str, Any], output_dir: Path) -> None:
+def _build_reportlab_table(results: list[dict[str, Any]]) -> Table:
+    """Tabla con la misma información que las tablas LaTeX."""
+    header = [
+        "Experimento / modelo",
+        "F1 macro",
+        "BalAcc",
+        "Recall",
+        "Precision",
+        "ICN*",
+        "ICN",
+        "Estab*",
+        "Delta sesgo",
+        "Best params",
+    ]
+    rows: list[list[str]] = [header]
+    for item in results:
+        if not item["implemented"]:
+            label = f"{item.get('experiment_name', '')} / {item['model_name']}"
+            rows.append([label, "No implementado", *[""] * 8])
+            continue
+        label = f"{item.get('experiment_name', '')} / {item['model_name']}"
+        best_params_short = item["best_params_mode"]
+        if len(best_params_short) > 80:
+            best_params_short = best_params_short[:77] + "..."
+        rows.append(
+            [
+                label,
+                _format_mean_std(item["f1_macro_mean"], item["f1_macro_std"]),
+                _format_float(item["balanced_accuracy_mean"]),
+                _format_float(item["recall_macro_mean"]),
+                _format_float(item["precision_macro_mean"]),
+                _format_float(item["icn_raw"]),
+                _format_float(item["icn"]),
+                _format_float(item["stability_raw"]),
+                _format_float(item.get("delta_sesgo")),
+                best_params_short,
+            ]
+        )
+
+    table = Table(
+        rows,
+        colWidths=[
+            4.5 * cm, 2.4 * cm, 1.6 * cm, 1.6 * cm, 1.6 * cm,
+            1.3 * cm, 1.3 * cm, 1.3 * cm, 1.7 * cm, 5.5 * cm,
+        ],
+        repeatRows=1,
+    )
+    style = TableStyle(
+        [
+            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 7.0),
+            ("ALIGN", (1, 1), (-2, -1), "CENTER"),
+            ("ALIGN", (0, 0), (0, -1), "LEFT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+            ("TOPPADDING", (0, 0), (-1, 0), 4),
+        ]
+    )
+    for row_idx in range(1, len(rows)):
+        if row_idx % 2 == 0:
+            style.add("BACKGROUND", (0, row_idx), (-1, row_idx), colors.whitesmoke)
+    table.setStyle(style)
+    return table
+
+
+def _write_confusion_matrix(
+    target: str, item: dict[str, Any], output_dir: Path
+) -> None:
     labels = item["labels"]
     matrix = item["confusion_matrix"]
     experiment_name = item.get("experiment_name", "experiment")
-    path = output_dir / f"matriz_confusion_{experiment_name}_{target}_{item['model_key']}.csv"
+    path = (
+        output_dir
+        / f"matriz_confusion_{experiment_name}_{target}_{item['model_key']}.csv"
+    )
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["real/predicho", *labels])
@@ -159,13 +339,18 @@ def _write_confusion_matrix(target: str, item: dict[str, Any], output_dir: Path)
             writer.writerow([label, *row])
 
 
-def _write_class_report(target: str, item: dict[str, Any], output_dir: Path) -> None:
+def _write_class_report(
+    target: str, item: dict[str, Any], output_dir: Path
+) -> None:
     report = item["classification_report"]
     experiment_name = item.get("experiment_name", "experiment")
-    path = output_dir / f"metricas_por_clase_{experiment_name}_{target}_{item['model_key']}.csv"
+    path = (
+        output_dir
+        / f"metricas_por_clase_{experiment_name}_{target}_{item['model_key']}.csv"
+    )
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["clase", "precisión", "recall", "f1-score", "support"])
+        writer.writerow(["clase", "precision", "recall", "f1-score", "support"])
         for label in item["labels"]:
             row = report[str(label)]
             writer.writerow(
@@ -180,131 +365,36 @@ def _write_class_report(target: str, item: dict[str, Any], output_dir: Path) -> 
 
 
 def _latex_row(item: dict[str, Any]) -> str:
-    model = latex_escape(f"{item.get('experiment_name', '')} / {item['model_name']}")
+    model = latex_escape(
+        f"{item.get('experiment_name', '')} / {item['model_name']}"
+    )
     if not item["implemented"]:
         status = latex_escape(item["status"])
         return (
             f"{model} & {status} & {status} & {status} & {status} & "
-            f"{status} & {status} & {latex_escape(item['message'])} \\\\"
+            f"{status} & {status} & --- & --- & --- & "
+            f"{latex_escape(item['message'])} \\\\"
         )
 
+    n_iter_cell = (
+        str(int(item["search_n_iter"]))
+        if item.get("search_n_iter") is not None
+        else "---"
+    )
+    search_type = latex_escape(str(item.get("search_type") or "---"))
     return (
         f"{model} & "
         f"{_format_mean_std(item['f1_macro_mean'], item['f1_macro_std'])} & "
         f"{_format_float(item['balanced_accuracy_mean'])} & "
         f"{_format_float(item['recall_macro_mean'])} & "
         f"{_format_float(item['precision_macro_mean'])} & "
-        f"{_format_float(item['stability'])} & "
+        f"{_format_float(item['icn_raw'])} & "
         f"{_format_float(item['icn'])} & "
+        f"{_format_float(item.get('delta_sesgo'))} & "
+        f"{search_type} & "
+        f"{n_iter_cell} & "
         f"{latex_escape(item['best_params_mode'])} \\\\"
     )
-
-
-def _plain_table_block(target: str, results: list[dict[str, Any]]) -> list[str]:
-    distribution = _format_distribution(results[0]["class_distribution"])
-    lines = [
-        f"Experimento {target}",
-        f"Distribución: {distribution} | n_min={results[0]['n_min']} | k_outer={results[0]['k_outer']}",
-        "",
-        _plain_row(["Experimento/modelo", "F1 macro", "BalAcc", "Recall", "Precisión", "Estab", "ICN", "Estado"], header=True),
-        "-" * (sum(PLAIN_TABLE_WIDTHS) + len(PLAIN_TABLE_WIDTHS) - 1),
-        "",
-    ]
-    for item in results:
-        if item["implemented"]:
-            values = [
-                f"{item.get('experiment_name', '')} / {item['model_name']}",
-                _format_mean_std(item["f1_macro_mean"], item["f1_macro_std"]),
-                _format_float(item["balanced_accuracy_mean"]),
-                _format_float(item["recall_macro_mean"]),
-                _format_float(item["precision_macro_mean"]),
-                _format_float(item["stability"]),
-                _format_float(item["icn"]),
-                item["best_params_mode"],
-            ]
-        else:
-            values = [f"{item.get('experiment_name', '')} / {item['model_name']}", *["No implementado"] * 6, "No implementado"]
-        lines.append(_plain_row(values))
-        if item["implemented"]:
-            for wrapped in textwrap.wrap(f"Hiperparámetros más frecuentes: {item['best_params_mode']}", width=120):
-                lines.append(f"  {wrapped}")
-    return lines
-
-
-def _plain_row(values: list[str], header: bool = False) -> str:
-    cells = []
-    for value, width in zip(values, PLAIN_TABLE_WIDTHS, strict=True):
-        text = str(value)
-        if len(text) > width:
-            text = text[: width - 3] + "..."
-        cells.append(text.ljust(width))
-    row = " ".join(cells)
-    return row.upper() if header else row
-
-
-def _write_simple_pdf(pages: list[list[str]], output_path: Path) -> None:
-    objects: list[bytes] = []
-
-    def add_object(content: bytes) -> int:
-        objects.append(content)
-        return len(objects)
-
-    catalog_id = add_object(b"<< /Type /Catalog /Pages 2 0 R >>")
-    pages_id = add_object(b"")
-    font_id = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>")
-    page_ids: list[int] = []
-
-    for page_lines in pages:
-        content = _pdf_content_stream(page_lines)
-        content_id = add_object(
-            b"<< /Length " + str(len(content)).encode("ascii") + b" >>\nstream\n" + content + b"\nendstream"
-        )
-        page_id = add_object(
-            (
-                f"<< /Type /Page /Parent {pages_id} 0 R /MediaBox [0 0 842 595] "
-                f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {content_id} 0 R >>"
-            ).encode("ascii")
-        )
-        page_ids.append(page_id)
-
-    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
-    objects[pages_id - 1] = f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode("ascii")
-    assert catalog_id == 1
-
-    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for idx, obj in enumerate(objects, start=1):
-        offsets.append(len(pdf))
-        pdf.extend(f"{idx} 0 obj\n".encode("ascii"))
-        pdf.extend(obj)
-        pdf.extend(b"\nendobj\n")
-
-    xref_offset = len(pdf)
-    pdf.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
-    pdf.extend(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
-    pdf.extend(
-        (
-            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-            f"startxref\n{xref_offset}\n%%EOF\n"
-        ).encode("ascii")
-    )
-    output_path.write_bytes(bytes(pdf))
-
-
-def _pdf_content_stream(lines: list[str]) -> bytes:
-    content = ["BT", "/F1 8 Tf", "40 555 Td", "10 TL"]
-    for line in lines:
-        content.append(f"({_pdf_escape(line)}) Tj")
-        content.append("T*")
-    content.append("ET")
-    return "\n".join(content).encode("cp1252", errors="replace")
-
-
-def _pdf_escape(text: str) -> str:
-    safe = str(text).replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    return safe.encode("cp1252", errors="replace").decode("cp1252")
 
 
 def _format_distribution(distribution: dict[int, int]) -> str:
