@@ -1,1 +1,1 @@
-"""Código del Laboratorio 04."""
+"""Clasificadores de ensamble: Bagging, AdaBoost, Stacking, Gradient Boosting."""
