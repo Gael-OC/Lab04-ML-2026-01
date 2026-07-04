@@ -90,8 +90,8 @@ hyperparameter_search:
         params:
           clf__n_estimators: [50, 100, 200]
           clf__learning_rate: [0.05, 0.1, 0.5, 1.0]
-          # Stumps (1) suelen ganar con desbalance; se prueban 1, 2, 3 y 4.
-          clf__estimator__max_depth: [1, 2, 3, 4]
+          # Stumps (1) suelen ganar con desbalance; se prueban 1, 2, 3, 4 y 6.
+          clf__estimator__max_depth: [1, 2, 3, 4, 6]
 
       stacking:
         enabled: true
@@ -113,6 +113,7 @@ hyperparameter_search:
           clf__max_depth: [2, 3]
           clf__subsample: [0.7, 1.0]
           clf__min_samples_leaf: [1, 5]
+          clf__max_features: ["sqrt", null]
 
   random:
     models:
@@ -122,62 +123,68 @@ hyperparameter_search:
 
       bagging:
         enabled: true
-        n_iter: 100
+        n_iter: 200
         distributions:
           clf__n_estimators:
             dist: "randint"
             low: 50
-            high: 501
+            high: 601
           clf__max_samples:
             dist: "uniform"
-            low: 0.5
+            low: 0.4
             high: 1.0
           clf__max_features:
             dist: "uniform"
-            low: 0.3
+            low: 0.2
             high: 1.0
           clf__estimator__max_depth:
-            values: [1, 2, 3, 5, null]
+            values: [1, 2, 3, 5, 8, 12, null]
           clf__estimator__min_samples_leaf:
             dist: "randint"
             low: 1
-            high: 6
+            high: 11
           clf__estimator__class_weight:
             values: [null, "balanced"]
 
       adaboost:
         enabled: true
-        n_iter: 60
+        n_iter: 200
         distributions:
           clf__n_estimators:
             dist: "randint"
             low: 50
-            high: 401
+            high: 601
           clf__learning_rate:
             dist: "loguniform"
-            low: 0.05
-            high: 1.5
+            low: 0.01
+            high: 2.0
           clf__estimator__max_depth:
-            values: [1, 2, 3, 4]
+            values: [1, 2, 3, 4, 6, 8, null]
+          clf__estimator__min_samples_leaf:
+            dist: "randint"
+            low: 1
+            high: 11
+          clf__estimator__class_weight:
+            values: [null, "balanced"]
 
       stacking:
         enabled: true
-        n_iter: 80
+        n_iter: 150
         distributions:
           clf__final_C:
             dist: "loguniform"
-            low: 0.01
-            high: 10.0
+            low: 0.001
+            high: 100.0
           clf__logistic_C:
             dist: "loguniform"
-            low: 0.01
-            high: 10.0
+            low: 0.001
+            high: 100.0
           clf__tree_max_depth:
-            values: [2, 3, null]
+            values: [2, 3, 5, 8, null]
           clf__n_neighbors:
             dist: "randint"
             low: 3
-            high: 16
+            high: 26
           clf__passthrough:
             values: [false, true]
           clf__geometry:
@@ -187,20 +194,20 @@ hyperparameter_search:
 
       gradient_boosting:
         enabled: true
-        n_iter: 100
+        n_iter: 200
         distributions:
           clf__n_estimators:
             dist: "randint"
             low: 100
-            high: 501
+            high: 601
           clf__learning_rate:
             dist: "loguniform"
-            low: 0.01
+            low: 0.005
             high: 0.5
           clf__max_depth:
             dist: "randint"
             low: 2
-            high: 6
+            high: 9
           clf__subsample:
             dist: "uniform"
             low: 0.5
@@ -208,4 +215,6 @@ hyperparameter_search:
           clf__min_samples_leaf:
             dist: "randint"
             low: 1
-            high: 6
+            high: 11
+          clf__max_features:
+            values: ["sqrt", "log2", 0.5, 0.8, null]
