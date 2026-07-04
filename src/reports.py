@@ -130,8 +130,8 @@ def write_latex_tables(
             "validacion cruzada anidada. Se reportan F1 macro, balanced "
             "accuracy, ICN crudo y normalizado, estabilidad y "
             "$\\Delta$sesgo, además de las columnas de búsqueda "
-            "(experimento, search\_type, search\_scoring, search\_n\_iter, "
-            "best\_params\_mode)."
+            r"(experimento, search\_type, search\_scoring, search\_n\_iter, "
+            r"best\_params\_mode)."
         ),
         "",
     ]
@@ -208,7 +208,7 @@ def write_pdf_tables(
         Paragraph(
             "Bagging, AdaBoost, Stacking y Gradient Boosting evaluados con "
             "validacion cruzada anidada. Se comparan las estrategias "
-            "grid\_all y random\_all, y se reportan F1 macro, balanced "
+            r"grid\_all y random\_all, y se reportan F1 macro, balanced "
             "accuracy, ICN crudo y normalizado, estabilidad y "
             "$\\Delta$sesgo.",
             body_style,
