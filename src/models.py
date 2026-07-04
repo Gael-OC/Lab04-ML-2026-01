@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
@@ -53,6 +54,8 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
         n_neighbors: int = 5,
         logistic_C: float = 1.0,
         passthrough: bool = False,
+        geometry: str = "euclidean",
+        final_class_weight: Any = "balanced",
     ) -> None:
         self.random_state = random_state
         self.cv = cv
@@ -61,6 +64,8 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
         self.n_neighbors = n_neighbors
         self.logistic_C = logistic_C
         self.passthrough = passthrough
+        self.geometry = geometry
+        self.final_class_weight = final_class_weight
 
     def fit(self, X: Any, y: Any) -> "RobustStackingClassifier":
         y_array = np.asarray(y)
@@ -73,8 +78,17 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
         min_count = min(Counter(y_array).values())
 
         if min_count >= 2:
+            if min_count < self.cv:
+                warnings.warn(
+                    f"Stacking OOF: min_count ({min_count}) < cv ({self.cv}), usando {min_count} splits estratificados.",
+                    UserWarning,
+                )
             meta_features = self._out_of_fold_meta_features(X, y_array, base_estimators, min_count)
         else:
+            warnings.warn(
+                "Stacking OOF fallback: usando meta-features in-sample debido a min_count < 2 (imposible particionar en OOF).",
+                UserWarning,
+            )
             meta_features = self._in_sample_meta_features(X, y_array, base_estimators)
 
         if self.passthrough:
@@ -83,7 +97,7 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
 
         self.final_estimator_ = LogisticRegression(
             C=self.final_C,
-            class_weight="balanced",
+            class_weight=self.final_class_weight,
             max_iter=5000,
             random_state=self.random_state,
         )
@@ -122,6 +136,7 @@ class RobustStackingClassifier(BaseEstimator, ClassifierMixin):
                             KNeighborsClassifier(
                                 n_neighbors=self.n_neighbors,
                                 weights="distance",
+                                metric=self.geometry,
                             ),
                         ),
                     ]
@@ -267,7 +282,7 @@ def build_model_registry(random_state: int = 42) -> dict[str, ModelSpec]:
     # AdaBoost con stump (max_depth=1); el grid probará 1, 2 y 3.
     weak_tree = DecisionTreeClassifier(
         max_depth=1,
-        class_weight="balanced",
+        class_weight=None,
         random_state=random_state,
     )
 

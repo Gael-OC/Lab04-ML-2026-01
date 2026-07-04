@@ -90,8 +90,8 @@ hyperparameter_search:
         params:
           clf__n_estimators: [50, 100, 200]
           clf__learning_rate: [0.05, 0.1, 0.5, 1.0]
-          # Stumps (1) suelen ganar con desbalance; se prueban 2 y 3 tambien.
-          clf__estimator__max_depth: [1, 2, 3]
+          # Stumps (1) suelen ganar con desbalance; se prueban 1, 2, 3 y 4.
+          clf__estimator__max_depth: [1, 2, 3, 4]
 
       stacking:
         enabled: true
@@ -102,6 +102,8 @@ hyperparameter_search:
           clf__n_neighbors: [3, 7, 11]
           # passthrough permite que el meta-clasificador vea los features originales.
           clf__passthrough: [false, true]
+          clf__geometry: ["euclidean", "manhattan"]
+          clf__final_class_weight: [null, "balanced"]
 
       gradient_boosting:
         enabled: true
@@ -120,6 +122,7 @@ hyperparameter_search:
 
       bagging:
         enabled: true
+        n_iter: 100
         distributions:
           clf__n_estimators:
             dist: "randint"
@@ -131,7 +134,7 @@ hyperparameter_search:
             high: 1.0
           clf__max_features:
             dist: "uniform"
-            low: 0.5
+            low: 0.3
             high: 1.0
           clf__estimator__max_depth:
             values: [1, 2, 3, 5, null]
@@ -144,6 +147,7 @@ hyperparameter_search:
 
       adaboost:
         enabled: true
+        n_iter: 60
         distributions:
           clf__n_estimators:
             dist: "randint"
@@ -154,10 +158,11 @@ hyperparameter_search:
             low: 0.05
             high: 1.5
           clf__estimator__max_depth:
-            values: [1, 2, 3]
+            values: [1, 2, 3, 4]
 
       stacking:
         enabled: true
+        n_iter: 80
         distributions:
           clf__final_C:
             dist: "loguniform"
@@ -175,9 +180,14 @@ hyperparameter_search:
             high: 16
           clf__passthrough:
             values: [false, true]
+          clf__geometry:
+            values: ["euclidean", "manhattan", "minkowski"]
+          clf__final_class_weight:
+            values: [null, "balanced"]
 
       gradient_boosting:
         enabled: true
+        n_iter: 100
         distributions:
           clf__n_estimators:
             dist: "randint"
@@ -186,14 +196,14 @@ hyperparameter_search:
           clf__learning_rate:
             dist: "loguniform"
             low: 0.01
-            high: 0.3
+            high: 0.5
           clf__max_depth:
             dist: "randint"
             low: 2
             high: 6
           clf__subsample:
             dist: "uniform"
-            low: 0.6
+            low: 0.5
             high: 1.0
           clf__min_samples_leaf:
             dist: "randint"
