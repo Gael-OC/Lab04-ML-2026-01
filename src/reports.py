@@ -30,6 +30,8 @@ SUMMARY_COLUMNS: list[str] = [
     "status",
     "n_min",
     "k_outer",
+    "n_folds_valid",
+    "n_folds_failed",
     # Métricas
     "f1_macro_mean",
     "f1_macro_std",
@@ -436,3 +438,44 @@ def latex_escape(value: Any) -> str:
         "^": r"\textasciicircum{}",
     }
     return "".join(replacements.get(char, char) for char in text)
+
+
+def merge_historical_results(
+    new_results_by_target: dict[str, list[dict[str, Any]]], tables_dir: Path
+) -> dict[str, list[dict[str, Any]]]:
+    """Combina los resultados ejecutados en la corrida actual con el cache
+    o manifiesto histórico previo en `resultados_detallados.json`. De esta
+    forma, una corrida parcial no borra los modelos ni targets ya calculados.
+    """
+    json_path = tables_dir / "resultados_detallados.json"
+    if not json_path.exists():
+        return new_results_by_target
+
+    try:
+        with json_path.open("r", encoding="utf-8") as handle:
+            historical: dict[str, list[dict[str, Any]]] = json.load(handle)
+    except Exception:
+        return new_results_by_target
+
+    merged: dict[str, list[dict[str, Any]]] = dict(historical)
+    for target, new_list in new_results_by_target.items():
+        if target not in merged:
+            merged[target] = list(new_list)
+            continue
+
+        existing_list = list(merged[target])
+        by_key = {
+            (item.get("experiment_name", ""), item.get("model_key", "")): idx
+            for idx, item in enumerate(existing_list)
+        }
+
+        for new_item in new_list:
+            run_key = (new_item.get("experiment_name", ""), new_item.get("model_key", ""))
+            if run_key in by_key:
+                existing_list[by_key[run_key]] = new_item
+            else:
+                existing_list.append(new_item)
+
+        merged[target] = existing_list
+
+    return merged

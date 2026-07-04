@@ -63,6 +63,8 @@ def unimplemented_result(
         "class_distribution": distribution,
         "n_min": n_min,
         "k_outer": k_outer,
+        "n_folds_valid": 0,
+        "n_folds_failed": 0,
         "k_inner_requested": None,
         "search_type": None,
         "search_scoring": None,
@@ -161,6 +163,8 @@ def run_nested_cv(
     fold_best_scores: list[float] = []
     fold_best_estimators: list = [] if return_estimators else None
     fold_test_indices: list[list[int]] = [] if return_estimators else None
+    n_folds_valid = 0
+    n_folds_failed = 0
 
     for fold_idx, (train_idx, test_idx) in enumerate(outer_cv.split(X, y), start=1):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
@@ -191,6 +195,7 @@ def run_nested_cv(
             try:
                 search.fit(X_train, y_train)
             except ValueError as exc:
+                n_folds_failed += 1
                 # Si todo el grid falla (e.g. AdaBoost degenerado),
                 # registramos el error y saltamos este fold.
                 msg = f"{target_name} fold {fold_idx}: {exc}"
@@ -216,38 +221,24 @@ def run_nested_cv(
 
             # Si todos los fits devolvieron NaN, saltamos el fold.
             if np.isnan(search.best_score_):
+                n_folds_failed += 1
                 msg = f"{target_name} fold {fold_idx}: todas las configs del search fallaron."
                 if msg not in result_warnings:
                     result_warnings.append(msg)
                 fold_best_scores.append(float("nan"))
                 if return_estimators and fold_best_estimators is not None:
-                    # Usamos un DummyClassifier como fallback.
-                    from sklearn.dummy import DummyClassifier
-                    fallback = DummyClassifier(strategy="stratified")
-                    fallback.fit(X_train, y_train)
-                    fold_best_estimators.append(fallback)
+                    fold_best_estimators.append(None)
                     fold_test_indices.append([int(i) for i in test_idx])
-                y_pred = search.predict(X_test)
-                y_test_list = [int(value) for value in y_test.to_list()]
-                y_pred_list = [int(value) for value in y_pred.tolist()]
-                all_true.extend(y_test_list)
-                all_pred.extend(y_pred_list)
-                best_params_counter["all_configs_failed (1/1)"] += 1
                 fold_metrics.append({
-                    "accuracy": accuracy_score(y_test_list, y_pred_list),
-                    "balanced_accuracy": balanced_accuracy_score(y_test_list, y_pred_list),
-                    "precision_macro": precision_score(
-                        y_test_list, y_pred_list, average="macro", zero_division=0,
-                    ),
-                    "recall_macro": recall_score(
-                        y_test_list, y_pred_list, average="macro", zero_division=0,
-                    ),
-                    "f1_macro": f1_score(
-                        y_test_list, y_pred_list, average="macro", zero_division=0,
-                    ),
+                    "accuracy": float("nan"),
+                    "balanced_accuracy": float("nan"),
+                    "precision_macro": float("nan"),
+                    "recall_macro": float("nan"),
+                    "f1_macro": float("nan"),
                 })
                 continue
 
+        n_folds_valid += 1
         fold_best_scores.append(search.best_score_)
         if return_estimators and fold_best_estimators is not None:
             fold_best_estimators.append(search.best_estimator_)
@@ -284,6 +275,8 @@ def run_nested_cv(
         "class_distribution": distribution,
         "n_min": n_min,
         "k_outer": k_outer,
+        "n_folds_valid": n_folds_valid,
+        "n_folds_failed": n_folds_failed,
         "k_inner_requested": requested_inner,
         "search_type": search_type,
         "search_scoring": scoring_name,
@@ -297,23 +290,36 @@ def run_nested_cv(
         "classification_report": report,
     }
 
+    if n_folds_failed > 0:
+        msg = f"{target_name}: Corrida incompleta ({n_folds_failed}/{k_outer} folds fallidos). Métricas agregadas marcadas como NaN para evitar optimismo."
+        if msg not in result_warnings:
+            result_warnings.append(msg)
+
     for metric_name in metrics_df.columns:
         col = metrics_df[metric_name]
         valid = col.dropna()
-        result[f"{metric_name}_mean"] = float(valid.mean()) if not valid.empty else float("nan")
-        result[f"{metric_name}_std"] = (
-            float(valid.std(ddof=1)) if len(valid) > 1 else 0.0
-        )
+        if n_folds_failed > 0:
+            result[f"{metric_name}_mean"] = float("nan")
+            result[f"{metric_name}_std"] = float("nan")
+        else:
+            result[f"{metric_name}_mean"] = float(valid.mean()) if not valid.empty else float("nan")
+            result[f"{metric_name}_std"] = (
+                float(valid.std(ddof=1)) if len(valid) > 1 else 0.0
+            )
 
     fold_f1_external = [m["f1_macro"] for m in fold_metrics]
     result["best_scores_internal"] = fold_best_scores
     valid_scores = [s for s in fold_best_scores if not np.isnan(s)]
-    result["best_score_internal_mean"] = (
-        float(np.mean(valid_scores)) if valid_scores else float("nan")
-    )
-    result["best_score_internal_std"] = (
-        float(np.std(valid_scores, ddof=1)) if len(valid_scores) > 1 else 0.0
-    )
+    if n_folds_failed > 0:
+        result["best_score_internal_mean"] = float("nan")
+        result["best_score_internal_std"] = float("nan")
+    else:
+        result["best_score_internal_mean"] = (
+            float(np.mean(valid_scores)) if valid_scores else float("nan")
+        )
+        result["best_score_internal_std"] = (
+            float(np.std(valid_scores, ddof=1)) if len(valid_scores) > 1 else 0.0
+        )
     result["fold_metrics"] = fold_metrics
     result["fold_f1_external"] = fold_f1_external
     result["fold_delta_sesgo"] = [
@@ -321,7 +327,10 @@ def run_nested_cv(
         for i, e in zip(fold_best_scores, fold_f1_external)
     ]
     valid_deltas = [d for d in result["fold_delta_sesgo"] if not np.isnan(d)]
-    result["delta_sesgo"] = float(np.mean(valid_deltas)) if valid_deltas else float("nan")
+    if n_folds_failed > 0:
+        result["delta_sesgo"] = float("nan")
+    else:
+        result["delta_sesgo"] = float(np.mean(valid_deltas)) if valid_deltas else float("nan")
 
     result["stability_raw"] = float(
         max(0.0, min(1.0, 1.0 - result["f1_macro_std"]))
@@ -411,39 +420,40 @@ def assign_icn(results: list[dict[str, Any]]) -> None:
         "precision_macro_mean",
         "f1_macro_std",
     ]
-    normalized: dict[str, dict[str, float]] = {}
+    normalized: dict[str, dict[tuple[str, str], float]] = {}
     for key in metric_keys:
         values = np.array([item[key] for item in implemented], dtype=float)
         # Si todos los valores son NaN, devolvemos un mapa vacío.
         if np.all(np.isnan(values)):
-            normalized[key] = {item["model_key"]: float("nan") for item in implemented}
+            normalized[key] = {(item.get("experiment_name", ""), item["model_key"]): float("nan") for item in implemented}
             continue
         min_value = float(np.nanmin(values))
         max_value = float(np.nanmax(values))
         denom = max_value - min_value + 1e-12
         normalized[key] = {}
         for item in implemented:
+            run_key = (item.get("experiment_name", ""), item["model_key"])
             if np.isnan(item[key]):
-                normalized[key][item["model_key"]] = float("nan")
+                normalized[key][run_key] = float("nan")
                 continue
             if key == "f1_macro_std":
-                normalized[key][item["model_key"]] = float(
+                normalized[key][run_key] = float(
                     1.0 - (item[key] - min_value) / denom
                 )
             else:
-                normalized[key][item["model_key"]] = float(
+                normalized[key][run_key] = float(
                     (item[key] - min_value) / denom
                 )
 
     for item in implemented:
-        key = item["model_key"]
-        item["stability"] = normalized["f1_macro_std"][key]
+        run_key = (item.get("experiment_name", ""), item["model_key"])
+        item["stability"] = normalized["f1_macro_std"][run_key]
         components = [
-            0.40 * normalized["f1_macro_mean"][key],
-            0.25 * normalized["balanced_accuracy_mean"][key],
-            0.20 * normalized["recall_macro_mean"][key],
-            0.10 * normalized["precision_macro_mean"][key],
-            0.05 * normalized["f1_macro_std"][key],
+            0.40 * normalized["f1_macro_mean"][run_key],
+            0.25 * normalized["balanced_accuracy_mean"][run_key],
+            0.20 * normalized["recall_macro_mean"][run_key],
+            0.10 * normalized["precision_macro_mean"][run_key],
+            0.05 * normalized["f1_macro_std"][run_key],
         ]
         if any(np.isnan(c) for c in components):
             item["icn"] = float("nan")

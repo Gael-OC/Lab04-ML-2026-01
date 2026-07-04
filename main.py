@@ -14,6 +14,7 @@ from src.evaluation import (
 )
 from src.models import build_model_registry
 from src.reports import (
+    merge_historical_results,
     write_auxiliary_tables,
     write_json_results,
     write_latex_tables,
@@ -154,14 +155,16 @@ def main() -> None:
                     )
                 results_by_target[target_name].append(result)
 
+    output_dirs = {name: Path(path) for name, path in config["outputs"].items()}
+    tables_dir = output_dirs["tables"]
+    figures_dir = output_dirs.get("figures", tables_dir.parent / "figures")
+
+    results_by_target = merge_historical_results(results_by_target, tables_dir)
+
     # ICN se calcula al final porque compara corridas (modelo + experimento).
     for target_results in results_by_target.values():
         assign_icn(target_results)
         compute_delta_sesgo(target_results)
-
-    output_dirs = {name: Path(path) for name, path in config["outputs"].items()}
-    tables_dir = output_dirs["tables"]
-    figures_dir = output_dirs.get("figures", tables_dir.parent / "figures")
 
     write_summary_csv(results_by_target, tables_dir / "resumen_resultados.csv")
     write_json_results(results_by_target, tables_dir / "resultados_detallados.json")

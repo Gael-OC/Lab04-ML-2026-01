@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import pandas as pd
@@ -29,6 +30,9 @@ def load_sav_dataset(dataset_path: str | Path) -> pd.DataFrame:
     path = Path(dataset_path)
     if not path.exists():
         raise FileNotFoundError(f"No existe el dataset configurado: {path}")
+
+    sha256_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    print(f"[DataLoader] Dataset cargado: {path.name} | SHA256: {sha256_hash}")
 
     df, _ = pyreadstat.read_sav(str(path))
     _validate_columns(df)
