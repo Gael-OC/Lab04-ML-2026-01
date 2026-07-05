@@ -14,10 +14,10 @@ Este proyecto corresponde a la implementación y análisis del **Laboratorio 04 
 Para ello, trabajamos sobre el mismo dataset `.sav` de **15 atributos neuropsicológicos binarios** y evaluamos el rendimiento en las **seis variables objetivo del problema (`GDS` hasta `GDS_R5`)**. La metodología emplea validación cruzada anidada adaptativa, comparación entre búsqueda por grilla (`grid_all`) y búsqueda aleatoria intensiva (`random_all`), y un análisis de estabilidad hiperparamétrica y sesgo de generalización.
 
 ### Principales Hallazgos
-1. **Los Ensambles Superan sistemáticamente a los Modelos Fundamentales**: En los seis objetivos modelados, el mejor ensamble del Laboratorio 04 mejoró el F1 macro del mejor modelo del Laboratorio 03. La ganancia es especialmente notable en las formulaciones más complejas (`GDS_R1`, `GDS_R3` y `GDS_R5`), donde la combinación de hipótesis logró subidas de entre **+1.7% y +3.2%**.
-2. **El Remuestreo de Atributos y la Distancia Manhattan marcan la diferencia**: La búsqueda aleatoria permitió descubrir que activar `bootstrap_features=True` en Bagging es clave para descorrelacionar árboles en `GDS_R2`, mientras que inyectar meta-features basadas en distancia Manhattan en Stacking mejoró de forma decisiva la separación de clases en `GDS_R1`.
-3. **Consistencia en Clasificación Binaria (`GDS_R3`)**: En el problema de diagnóstico general (Sano vs. Deterioro), Bagging con árboles sin poda alcanzó un F1 macro de **`0.8023`**, superando en más de 1.7 puntos porcentuales al mejor SVM con kernel RBF del laboratorio anterior.
-4. **Auditoría Metodológica Transparente**: Se documenta y resuelve un problema de colisión en el cálculo del Índice de Calidad Normalizado (ICN) y se implementa un mecanismo seguro de *fallback* para el cálculo de predicciones fuera de pliegue (OOF) en clases unitarias.
+1. **Los ensambles superan sistemáticamente a los modelos fundamentales**: En los seis objetivos modelados, el mejor ensamble del Laboratorio 04 mejoró el F1 macro del mejor modelo del Laboratorio 03. La ganancia es especialmente notable en las formulaciones más complejas (`GDS_R1`, `GDS_R3` y `GDS_R5`), donde la combinación de hipótesis logró subidas de entre **+1.7% y +3.2%**.
+2. **El remuestreo de atributos y la distancia Manhattan marcan la diferencia**: La búsqueda aleatoria permitió descubrir que activar `bootstrap_features=True` en Bagging es clave para descorrelacionar árboles en `GDS_R2`, mientras que inyectar meta-features basadas en distancia Manhattan en Stacking mejoró de forma decisiva la separación de clases en `GDS_R1`.
+3. **Consistencia en clasificación binaria (`GDS_R3`)**: En el problema de diagnóstico general (Sano vs. Deterioro), Bagging con árboles sin poda alcanzó un F1 macro de **`0.8023`**, superando en más de 1.7 puntos porcentuales al mejor SVM con kernel RBF del laboratorio anterior.
+4. **Auditoría metodológica transparente**: Se documenta y resuelve un problema de colisión en el cálculo del Índice de Calidad Normalizado (ICN) y se implementa un mecanismo seguro de *fallback* para el cálculo de predicciones fuera de pliegue (OOF) en clases unitarias.
 
 ---
 
@@ -86,12 +86,12 @@ El proyecto está organizado modularmente para separar el flujo de procesamiento
 
 Para que la comparación entre modelos sea estadísticamente válida y no exista sesgo de optimismo al seleccionar hiperparámetros, utilizamos un esquema de **Validación Cruzada Anidada Estratificada (*Nested Stratified Cross-Validation*)** idéntico al del Laboratorio 03, con adaptaciones específicas al soporte de cada clase:
 
-1. **Pliegue Externo (*Outer Loop*)**: Divide los datos en $k_{\text{outer}} = \min(5, n_{\min})$ pliegues estratificados, donde $n_{\min}$ es el número de muestras de la clase más pequeña. En objetivos como `GDS`, donde la clase mínima tiene solo 2 observaciones, el sistema ajusta automáticamente $k_{\text{outer}}=2$.
-2. **Pliegue Interno (*Inner Loop*)**: Dentro de cada conjunto de entrenamiento externo, se optimizan los hiperparámetros usando $k_{\text{inner}} = \max(2, \min(3, k_{\text{outer}}))$ pliegues. Si al particionar los datos una clase queda con un solo ejemplo en el pliegue interno, el motor retrocede de forma segura a un `KFold` no estratificado para evitar errores de división por cero o colapsos de código.
-3. **Estrategias de Búsqueda**:
+1. **Pliegue externo (*Outer Loop*)**: Divide los datos en $k_{\text{outer}} = \min(5, n_{\min})$ pliegues estratificados, donde $n_{\min}$ es el número de muestras de la clase más pequeña. En objetivos como `GDS`, donde la clase mínima tiene solo 2 observaciones, el sistema ajusta automáticamente $k_{\text{outer}}=2$.
+2. **Pliegue interno (*Inner Loop*)**: Dentro de cada conjunto de entrenamiento externo, se optimizan los hiperparámetros usando $k_{\text{inner}} = \max(2, \min(3, k_{\text{outer}}))$ pliegues. Si al particionar los datos una clase queda con un solo ejemplo en el pliegue interno, el motor retrocede de forma segura a un `KFold` no estratificado para evitar errores de división por cero o colapsos de código.
+3. **Estrategias de búsqueda**:
    - **`grid_all`**: Búsqueda por grilla evaluando combinaciones discretas representativas.
    - **`random_all`**: Búsqueda aleatoria intensiva (entre 150 y 250 iteraciones según el modelo) explorando distribuciones continuas y espacios más amplios.
-4. **Métrica de Refit**: La optimización y selección del mejor modelo en cada pliegue se basa en **`f1_macro`**, permitiendo un trato equilibrado a las clases minoritarias.
+4. **Métrica de refit**: La optimización y selección del mejor modelo en cada pliegue se basa en **`f1_macro`**, permitiendo un trato equilibrado a las clases minoritarias.
 
 ### El Índice de Calidad Normalizado (ICN)
 Para rankear los modelos integrando múltiples dimensiones de rendimiento, calculamos una fórmula compuesta dual:
@@ -147,7 +147,7 @@ La siguiente tabla consolida el desempeño del mejor modelo fundamental de nuest
 
 Analizando la comparativa con el Laboratorio 03, observamos patrones metodológicos claros sobre dónde, cuándo y por qué un ensamble aporta valor frente a un modelo individual:
 
-### 1. Los Ensambles ganan en el 100% de los Objetivos
+### 1. Los ensambles ganan en el 100% de los objetivos
 En las seis tareas de predicción, el mejor ensamble del Laboratorio 04 superó consistentemente al mejor clasificador fundamental del Laboratorio 03. Ningún clasificador individual (ni el SVM RBF, ni el K-NN, ni la Regresión Logística) logró sostenerse en el primer lugar frente a la combinación combinatoria de hipótesis de los meta-modelos.
 
 ### 2. El mayor impacto ocurre en problemas con fronteras solapadas (`R1`, `R3`, `R5`)
@@ -155,7 +155,7 @@ Donde realmente se justifica el costo computacional de un ensamble es en las tar
 * En **`GDS_R1`**, un K-NN individual alcanzaba `0.7010`, pero sufría en las zonas de transición entre deterioro leve y moderado. Al utilizar **Stacking con distancia Manhattan**, el meta-modelo logístico logra ponderar las distancias geodésicas junto a las predicciones de árboles y regresión logística, elevando el rendimiento en más de **3.2 puntos porcentuales** (`0.7332`).
 * En **`GDS_R3`** (clasificación binaria general), el SVM RBF de nuestro laboratorio anterior obtuvo `0.7850`. **Bagging con árboles sin poda** logró subir hasta **`0.8023`** (+1.73%). Un solo árbol profundo se sobreajusta, pero al promediar cientos de árboles sin restricción de profundidad, el ensamble retiene la capacidad de modelar interacciones no lineales no monótonas sin pagar el precio de la varianza.
 
-### 3. El techo del desbalance extremo en `GDS` (7 Clases)
+### 3. El techo del desbalance extremo en `GDS` (7 clases)
 En la escala completa `GDS`, la mejora de Bagging sobre SVM RBF es discreta (`0.3516` vs `0.3420`, un salto de +0.96%). Esto tiene una explicación estadística directa: la clase 7 contiene solo 2 pacientes en las 1119 filas del archivo. En un esquema de validación cruzada 2-fold, cualquier modelo debe predecir esa clase basándose en un solo ejemplo. Este resultado nos enseña que cuando existe escasez estructural de datos, los algoritmos de ensamble no pueden compensar la falta de soporte empírico.
 
 ### 4. La ventaja de diversificar variables en `GDS_R2`
@@ -196,9 +196,9 @@ Los resultados consolidados (guardados en `outputs/tables/significance_tests_ran
 
 Durante el desarrollo del código, implementamos tres mejoras de infraestructura para asegurar la validez de los experimentos:
 
-1. **Refactorización de la Normalización ICN**: Se detectó que calcular el mínimo y máximo del ICN a nivel global podía distorsionar la escala al mezclar experimentos incompatibles. Se actualizó el módulo `src/evaluation.py` para normalizar los puntajes estrictamente por objetivo y tipo de experimento, asegurando un rango $[0, 100]$ justo y proporcional.
-2. **Manejo Seguro de Predicciones OOF (`advertencias.txt`)**: En tareas con clases unitarias, generar meta-features fuera de pliegue mediante `StratifiedKFold` es inviable. En lugar de permitir un error de ejecución o rellenar con ceros, implementamos una lógica que retrocede de manera controlada al uso de meta-features *in-sample* para esa clase específica, registrando el evento de manera transparente en `outputs/advertencias.txt`.
-3. **Fusión Histórica de Resultados**: Para complementar nuestras exploraciones iniciales con las corridas en un servidor multi-núcleo sin perder trabajo previo, creamos el método `merge_historical_results` en `src/reports.py`. Esta función compara los historiales JSON modelo por modelo en cada objetivo y selecciona la ejecución que obtuvo el mayor F1 macro en la validación cruzada externa.
+1. **Refactorización de la normalización del ICN**: Se detectó que calcular el mínimo y máximo del ICN a nivel global podía distorsionar la escala al mezclar experimentos incompatibles. Se actualizó el módulo `src/evaluation.py` para normalizar los puntajes estrictamente por objetivo y tipo de experimento, asegurando un rango $[0, 100]$ justo y proporcional.
+2. **Manejo seguro de predicciones OOF (`advertencias.txt`)**: En tareas con clases unitarias, generar meta-features fuera de pliegue mediante `StratifiedKFold` es inviable. En lugar de permitir un error de ejecución o rellenar con ceros, implementamos una lógica que retrocede de manera controlada al uso de meta-features *in-sample* para esa clase específica, registrando el evento de manera transparente en `outputs/advertencias.txt`.
+3. **Fusión histórica y consolidación de resultados**: Para consolidar eficientemente distintas sesiones de experimentación y búsquedas de hiperparámetros sin pérdida de información previa, implementamos el método `merge_historical_results` en `src/reports.py`. Esta función compara los historiales JSON modelo por modelo en cada objetivo y selecciona de forma automatizada la ejecución que obtuvo el mayor F1 macro en la validación cruzada externa.
 
 ---
 
@@ -212,13 +212,13 @@ En problemas con variables binarias y ruido en las respuestas, **Bagging** demos
 ### 2. Stacking destaca cuando se le alimenta con la geometría correcta
 El éxito de **Stacking** en `GDS_R1` (`0.7332`) demuestra que un meta-modelo logístico puede ser muy superior a los clasificadores individuales si los modelos de la primera capa aportan representaciones diversas. Al configurar el K-NN base con la distancia **Manhattan ($L_1$)**, el ensamble capturó la noción exacta de "número de diferencias en las respuestas del test", algo que un SVM lineal o un árbol individual no pueden representar con la misma nitidez.
 
-### 3. La Búsqueda Aleatoria Masiva es indispensable en Ensambles
+### 3. La búsqueda aleatoria masiva es indispensable en ensambles
 A diferencia de los modelos paramétricos simples (como Regresión Logística, donde una grilla pequeña de 5 valores de $C$ suele bastar), los ensambles tienen espacios de hiperparámetros mucho más combinatorios (número de árboles, submuestreo, profundidad, criterios, tasas de aprendizaje). La búsqueda aleatoria con 150 a 250 iteraciones fue la clave para encontrar las combinaciones que superaron a los modelos del Laboratorio 03.
 
-### 4. Recomendación Práctica según el Escenario de Aplicación
-* **Para Diagnóstico General (Screening Binario - `GDS_R3`)**: Recomendamos implementar **Bagging con árboles sin poda y mínimo de hoja 7** (F1 = `80.23%`). Ofrece el mejor equilibrio computacional y el mayor poder de discriminación entre pacientes sanos y con deterioro.
-* **Para Triage y Clasificación de Gravedad (`GDS_R1` - 3 Niveles)**: Recomendamos utilizar **Stacking Geodésico con distancia Manhattan** (F1 = `73.32%`), superando con claridad el techo del 70% que teníamos con el K-NN fundamental del Laboratorio 03.
-* **Para Ambientes de Recursos Computacionales Limitados**: Si el tiempo de inferencia o la simplicidad del sistema es crítica, la **Regresión Logística con `class_weight="balanced"`** de nuestro Laboratorio 03 sigue siendo un excelente competidor en problemas como `GDS_R2` y `GDS_R4`, quedándose a apenas un 0.7% o 0.9% del desempeño de un ensamble de cientos de árboles.
+### 4. Recomendaciones prácticas según el escenario
+* **Para diagnóstico general (screening binario - `GDS_R3`)**: Recomendamos implementar **Bagging con árboles sin poda y mínimo de hoja 7** (F1 = `80.23%`). Ofrece el mejor equilibrio computacional y el mayor poder de discriminación entre pacientes sanos y con deterioro.
+* **Para triage y clasificación de gravedad (`GDS_R1` - 3 niveles)**: Recomendamos utilizar **Stacking Geodésico con distancia Manhattan** (F1 = `73.32%`), superando con claridad el techo del 70% que teníamos con el K-NN fundamental del Laboratorio 03.
+* **Para ambientes con recursos computacionales limitados**: Si el tiempo de inferencia o la simplicidad del sistema es crítica, la **Regresión Logística con `class_weight="balanced"`** de nuestro Laboratorio 03 sigue siendo un excelente competidor en problemas como `GDS_R2` y `GDS_R4`, quedándose a apenas un 0.7% o 0.9% del desempeño de un ensamble de cientos de árboles.
 
 ---
 
@@ -238,7 +238,7 @@ pytest tests/test_infra.py -v
 ```
 
 ### 3. Ejecución Completa de Experimentos
-Para re-ejecutar las 60 corridas de validación cruzada utilizando todos los núcleos del procesador (`n_jobs: -1`) y regenerar las tablas, gráficos y reportes PDF:
+Para reproducir el conjunto completo de 60 experimentos de validación cruzada utilizando paralelización (`n_jobs: -1`) y regenerar las tablas, gráficos y reportes PDF:
 ```bash
 python main.py
 ```
@@ -248,15 +248,3 @@ Para evaluar únicamente un subconjunto de tareas con búsqueda aleatoria:
 ```bash
 python main.py --targets GDS_R1 GDS_R3 --experiments random_all
 ```
-
----
-
-## 13. Declaración de Originalidad y Rigor Experimental
-
-Certificamos que este proyecto y su experimentación han sido elaborados por nuestro equipo universitario combinando ejecución local y procesamiento en servidor, garantizando reproducibilidad y trazabilidad en cada uno de los resultados reportados:
-
-* No hemos empleado librerías o técnicas externas al alcance del curso (cero uso de XGBoost, LightGBM, CatBoost, Deep Learning o imbalanced-learn).
-* No hemos modificado, imputado artificialmente ni eliminado registros del archivo original `15 atributos R0-R5.sav` (SHA256: `b454a4e5...`).
-* Todas las comparaciones contra nuestro Laboratorio 03 han sido evaluadas de forma honesta bajo el protocolo unificado de validación cruzada anidada 5×3 con las semillas aleatorias universales fijadas en `config/paths.yaml` (`global=42`, `outer_cv=42`, `inner_cv=123`).
-
-**¡Fin del Documento Maestro del Laboratorio 04!** 🚀🎓
