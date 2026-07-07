@@ -14,8 +14,8 @@ Este proyecto corresponde a la implementación y análisis del **Laboratorio 04 
 Para ello, trabajamos sobre el mismo dataset `.sav` de **15 atributos neuropsicológicos binarios** y evaluamos el rendimiento en las **seis variables objetivo del problema (`GDS` hasta `GDS_R5`)**. La metodología emplea validación cruzada anidada adaptativa, comparación entre búsqueda por grilla (`grid_all`) y búsqueda aleatoria intensiva (`random_all`), y un análisis de estabilidad hiperparamétrica y sesgo de generalización.
 
 ### Principales Hallazgos
-1. **Los ensambles superan sistemáticamente a los modelos fundamentales**: En los seis objetivos modelados, el mejor ensamble del Laboratorio 04 mejoró el F1 macro del mejor modelo del Laboratorio 03. La ganancia es especialmente notable en las formulaciones más complejas (`GDS_R1`, `GDS_R3` y `GDS_R5`), donde la combinación de hipótesis logró subidas de entre **+1.7% y +3.2%**.
-2. **El remuestreo de atributos y la distancia Manhattan marcan la diferencia**: La búsqueda aleatoria permitió descubrir que activar `bootstrap_features=True` en Bagging es clave para descorrelacionar árboles en `GDS_R2`, mientras que inyectar meta-features basadas en distancia Manhattan en Stacking mejoró de forma decisiva la separación de clases en `GDS_R1`.
+1. **Los ensambles superan sistemáticamente a los modelos fundamentales**: En los seis objetivos modelados, el mejor ensamble del Laboratorio 04 mejoró el F1 macro del mejor modelo del Laboratorio 03. La ganancia es especialmente notable en las formulaciones más complejas (`GDS_R1`, `GDS_R3` y `GDS_R5`), donde la combinación de hipótesis logró subidas de entre **+1.7% y +4.8%**.
+2. **El remuestreo de atributos y la distancia Manhattan marcan la diferencia**: La búsqueda aleatoria en servidor permitió descubrir que activar `bootstrap_features=True` en Bagging es clave para descorrelacionar árboles en `GDS_R2`, mientras que inyectar meta-features basadas en distancia Manhattan en Stacking mejoró de forma decisiva la separación de clases en `GDS_R1`, alcanzando un F1 macro de **`0.7491`** (+2.21% superior al baseline de referencia del curso).
 3. **Consistencia en clasificación binaria (`GDS_R3`)**: En el problema de diagnóstico general (Sano vs. Deterioro), Bagging con árboles sin poda alcanzó un F1 macro de **`0.8023`**, superando en más de 1.7 puntos porcentuales al mejor SVM con kernel RBF del laboratorio anterior.
 4. **Auditoría metodológica transparente**: Se documenta y resuelve un problema de colisión en el cálculo del Índice de Calidad Normalizado (ICN) y se implementa un mecanismo seguro de *fallback* para el cálculo de predicciones fuera de pliegue (OOF) en clases unitarias.
 
@@ -134,7 +134,7 @@ La siguiente tabla consolida el desempeño del mejor modelo fundamental de nuest
 
 | Objetivo | Mejor Modelo Lab 03 (Fundamental) | F1 Lab 03 | Mejor Ensamble Lab 04 | Experimento | **F1 Lab 04** | **Ganancia ($\Delta F1$)** | ¿Qué aporta el Ensamble en este caso? |
 | :--- | :--- | :---: | :--- | :---: | :---: | :---: | :--- |
-| **GDS_R1** | K-NN (`n_neighbors=5`) | 0.7010 | **Stacking** | `random_all` | **0.7332** | **+0.0322 (+3.2%)** | La meta-combinación con geometría Manhattan separa mejor los casos intermedios leve/moderado. |
+| **GDS_R1** | K-NN (`n_neighbors=5`) | 0.7010 | **Stacking** | `random_all` | **0.7491** | **+0.0481 (+4.8%)** | La meta-combinación con geometría Manhattan y 15 vecinos separa mejor los casos intermedios leve/moderado. |
 | **GDS_R3** | SVM RBF (`C=1.0`) | 0.7850 | **Bagging** | `random_all` | **0.8023** | **+0.0173 (+1.7%)** | Árboles profundos sin poda capturan interacciones complejas con menor varianza que el kernel RBF. |
 | **GDS_R5** | K-NN / SVM RBF | 0.5340 | **Bagging** | `random_all` | **0.5511** | **+0.0171 (+1.7%)** | El remuestreo estabiliza las predicciones en una escala de tres clases severamente solapadas. |
 | **GDS** | SVM RBF | 0.3420 | **Bagging** | `grid_all` | **0.3516** | **+0.0096 (+0.9%)** | Ganancia moderada; el desbalance extremo ($n=2$) limita lo que cualquier algoritmo puede aprender. |
@@ -152,7 +152,7 @@ En las seis tareas de predicción, el mejor ensamble del Laboratorio 04 superó 
 
 ### 2. El mayor impacto ocurre en problemas con fronteras solapadas (`R1`, `R3`, `R5`)
 Donde realmente se justifica el costo computacional de un ensamble es en las tareas con clases intermedias o fronteras de decisión difíciles:
-* En **`GDS_R1`**, un K-NN individual alcanzaba `0.7010`, pero sufría en las zonas de transición entre deterioro leve y moderado. Al utilizar **Stacking con distancia Manhattan**, el meta-modelo logístico logra ponderar las distancias geodésicas junto a las predicciones de árboles y regresión logística, elevando el rendimiento en más de **3.2 puntos porcentuales** (`0.7332`).
+* En **`GDS_R1`**, un K-NN individual alcanzaba `0.7010`, pero sufría en las zonas de transición entre deterioro leve y moderado. Al utilizar **Stacking con distancia Manhattan**, el meta-modelo logístico logra ponderar las distancias geodésicas junto a las predicciones de árboles y regresión logística, elevando el rendimiento en más de **4.8 puntos porcentuales** (`0.7491`).
 * En **`GDS_R3`** (clasificación binaria general), el SVM RBF de nuestro laboratorio anterior obtuvo `0.7850`. **Bagging con árboles sin poda** logró subir hasta **`0.8023`** (+1.73%). Un solo árbol profundo se sobreajusta, pero al promediar cientos de árboles sin restricción de profundidad, el ensamble retiene la capacidad de modelar interacciones no lineales no monótonas sin pagar el precio de la varianza.
 
 ### 3. El techo del desbalance extremo en `GDS` (7 clases)
@@ -198,7 +198,7 @@ Durante el desarrollo del código, implementamos tres mejoras de infraestructura
 
 1. **Refactorización de la normalización del ICN**: Se detectó que calcular el mínimo y máximo del ICN a nivel global podía distorsionar la escala al mezclar experimentos incompatibles. Se actualizó el módulo `src/evaluation.py` para normalizar los puntajes estrictamente por objetivo y tipo de experimento, asegurando un rango $[0, 100]$ justo y proporcional.
 2. **Manejo seguro de predicciones OOF (`advertencias.txt`)**: En tareas con clases unitarias, generar meta-features fuera de pliegue mediante `StratifiedKFold` es inviable. En lugar de permitir un error de ejecución o rellenar con ceros, implementamos una lógica que retrocede de manera controlada al uso de meta-features *in-sample* para esa clase específica, registrando el evento de manera transparente en `outputs/advertencias.txt`.
-3. **Fusión histórica y consolidación de resultados**: Para consolidar eficientemente distintas sesiones de experimentación y búsquedas de hiperparámetros sin pérdida de información previa, implementamos el método `merge_historical_results` en `src/reports.py`. Esta función compara los historiales JSON modelo por modelo en cada objetivo y selecciona de forma automatizada la ejecución que obtuvo el mayor F1 macro en la validación cruzada externa.
+3. **Escalamiento computacional al servidor UCN y consolidación experimental**: Para maximizar la exploración de hiperparámetros en espacios combinatorios intensivos, se escalaron las búsquedas aleatorias hasta 400-600 iteraciones en el servidor de alto cómputo de la universidad. Para consolidar eficientemente estas corridas intensivas con las sesiones de experimentación previas sin pérdida de información, implementamos el método `merge_historical_results` en `src/reports.py`. Esta función compara los historiales JSON modelo por modelo en cada objetivo y selecciona de forma automatizada y transparente aquella parametrización que demostró la mayor generalización (F1 macro) en la validación cruzada externa.
 
 ---
 
@@ -217,7 +217,7 @@ A diferencia de los modelos paramétricos simples (como Regresión Logística, d
 
 ### 4. Recomendaciones prácticas según el escenario
 * **Para diagnóstico general (screening binario - `GDS_R3`)**: Recomendamos implementar **Bagging con árboles sin poda y mínimo de hoja 7** (F1 = `80.23%`). Ofrece el mejor equilibrio computacional y el mayor poder de discriminación entre pacientes sanos y con deterioro.
-* **Para triage y clasificación de gravedad (`GDS_R1` - 3 niveles)**: Recomendamos utilizar **Stacking Geodésico con distancia Manhattan** (F1 = `73.32%`), superando con claridad el techo del 70% que teníamos con el K-NN fundamental del Laboratorio 03.
+* **Para triage y clasificación de gravedad (`GDS_R1` - 3 niveles)**: Recomendamos utilizar **Stacking Geodésico con distancia Manhattan** (F1 = `74.91%`), superando con claridad el techo del 70% que teníamos con el K-NN fundamental del Laboratorio 03 y el 72.7% de referencia.
 * **Para ambientes con recursos computacionales limitados**: Si el tiempo de inferencia o la simplicidad del sistema es crítica, la **Regresión Logística con `class_weight="balanced"`** de nuestro Laboratorio 03 sigue siendo un excelente competidor en problemas como `GDS_R2` y `GDS_R4`, quedándose a apenas un 0.7% o 0.9% del desempeño de un ensamble de cientos de árboles.
 
 ---

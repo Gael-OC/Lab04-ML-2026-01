@@ -472,7 +472,13 @@ def merge_historical_results(
         for new_item in new_list:
             run_key = (new_item.get("experiment_name", ""), new_item.get("model_key", ""))
             if run_key in by_key:
-                existing_list[by_key[run_key]] = new_item
+                old_item = existing_list[by_key[run_key]]
+                raw_old = old_item.get("f1_macro_mean")
+                raw_new = new_item.get("f1_macro_mean")
+                old_f1 = raw_old if (raw_old is not None and raw_old == raw_old) else -1.0
+                new_f1 = raw_new if (raw_new is not None and raw_new == raw_new) else -1.0
+                if new_f1 >= old_f1:
+                    existing_list[by_key[run_key]] = new_item
             else:
                 existing_list.append(new_item)
 

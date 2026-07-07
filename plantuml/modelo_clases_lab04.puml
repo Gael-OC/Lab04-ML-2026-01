@@ -116,6 +116,8 @@ package "src.evaluation" {
     +unimplemented_result(target_name, model_spec, distribution, n_min, k_outer, experiment_name): dict
     +run_nested_cv(X, y, target_name, model_spec, validation_config, search_config, random_state_config, experiment_name): dict
     +assign_icn(results): void
+    +compute_delta_sesgo(results): void
+    -_compute_icn_raw(item): float
     -_search_space_from_config(model_key, search_type, search_config): dict
     -_materialize_distributions(distributions_config): dict
     -_materialize_distribution(param_name, distribution_config): Any
@@ -132,26 +134,70 @@ package "src.evaluation" {
 package "src.reports" {
   class Reports <<module>> {
     +SUMMARY_COLUMNS: list[str]
-    +PLAIN_TABLE_WIDTHS: list[int]
     +write_summary_csv(results_by_target, output_path): void
     +write_json_results(results_by_target, output_path): void
     +write_auxiliary_tables(results_by_target, output_dirs): void
     +write_warnings(results_by_target, output_path): void
     +write_latex_tables(results_by_target, output_path): void
-    +write_pdf_tables(results_by_target, output_path): void
+    +write_pdf_tables(results_by_target, output_path, figures_dir): void
+    +merge_historical_results(new_results_by_target, tables_dir): dict
+    -_build_reportlab_table(results): Table
     -_write_confusion_matrix(target, item, output_dir): void
     -_write_class_report(target, item, output_dir): void
     -_latex_row(item): str
-    -_plain_table_block(target, results): list[str]
-    -_plain_row(values, header): str
-    -_write_simple_pdf(pages, output_path): void
-    -_pdf_content_stream(lines): bytes
-    -_pdf_escape(text): str
     -_format_distribution(distribution): str
     -_format_mean_std(mean, std): str
     -_format_float(value): str
     -_csv_value(value): Any
     +latex_escape(value): str
+  }
+}
+
+package "src.analysis" {
+  class Analysis <<module>> {
+    +run_advanced_analysis(results_by_target, df, output_dirs, estimator_cache_dir, lab3_csv_path): void
+    +analyze_learning_curves(df, output_dir): void
+    +analyze_feature_importance(results_by_target, model_registry, output_dir, estimator_cache_dir): void
+    +analyze_hyperparameter_stability(results_by_target, output_dir): void
+    +detect_zero_recall_classes(results_by_target, output_dir): void
+    +detect_low_support_classes(df, output_dir): void
+    +analyze_per_fold_stability(results_by_target, output_dir): void
+    +bootstrap_ci(values, n_boot, alpha, random_state): tuple[float, float]
+    +analyze_bootstrap_ci(results_by_target, output_dir): void
+    +visualize_gradient_boosting_trees(results_by_target, model_registry, output_dir, estimator_cache_dir): void
+    +analyze_statistical_tests(results_by_target, df, output_dir, estimator_cache_dir): void
+    +analyze_grid_vs_random(results_by_target, output_dir): Path
+    +analyze_ensembles_vs_lab3(results_by_target, output_dir, lab3_csv_path): Path
+  }
+}
+
+package "src.plots" {
+  class Plots <<module>> {
+    +generate_all_plots(results_by_target, output_dir): void
+    -_plot_f1_macro_heatmap(results_by_target, output_dir): void
+  }
+}
+
+package "src.eda" {
+  class Eda <<module>> {
+    +run_eda(df, output_dir): void
+    -_plot_class_distribution(df, output_path): void
+    -_plot_feature_correlation(df, output_path): void
+    -_plot_target_relationships(df, output_path): void
+    -_write_eda_summary(df, output_path): void
+  }
+}
+
+package "src.significance" {
+  class Significance <<module>> {
+    +estimator_cache_path(cache_dir, target_name, experiment_name, model_name, fold_index): Path
+    +save_estimators(cache_dir, target_name, experiment_name, model_name, estimators): void
+    +load_estimators(cache_dir, target_name, experiment_name, model_name, n_folds): list[estimator]
+    +run_significance_tests(results_by_target, df, cache_dir, output_dir): void
+    -_reconstruct_fold_predictions(estimator, X_test, y_test): tuple[ndarray, float]
+    -_wilcoxon_pvalue(f1_a, f1_b): float
+    -_mcnemar_yates_pvalue(b, c): float
+    -_perfold_mcnemar_counts(y_test, y_pred_a, y_pred_b): tuple[int, int]
   }
 }
 
@@ -173,6 +219,13 @@ package "scikit-learn / librerías externas" {
   class KFold <<external>>
   class DataFrame <<external>>
   class Series <<external>>
+  class ndarray <<external>>
+  class pyreadstat <<external>>
+  class joblib <<external>>
+  class "matplotlib / seaborn" <<external>>
+  class SimpleDocTemplate <<external>>
+  class Table <<external>>
+  class Image <<external>>
 }
 
 Main ..> Settings : carga configuración
@@ -181,6 +234,9 @@ Main ..> DataLoader : carga dataset\ny prepara X/y
 Main ..> ModelFactory : construye registry
 Main ..> Evaluation : evalúa modelos
 Main ..> Reports : escribe salidas
+Main ..> Analysis : ejecuta análisis avanzado\n(--skip-analysis)
+Main ..> Plots : genera gráficas de experimentos\n(--skip-plots)
+Main ..> Eda : ejecuta análisis exploratorio\n(--skip-eda)
 
 ModelFactory ..> ModelSpec : crea especificaciones
 ModelFactory ..> RobustStackingClassifier : registra Stacking
@@ -208,12 +264,31 @@ Evaluation ..> scipy.stats : randint, uniform,\nloguniform
 Evaluation ..> StratifiedKFold : folds externos/internos
 Evaluation ..> KFold : fallback con clases pequeñas
 Evaluation ..> Reports : produce datos consumidos por reportes
+Evaluation ..> Significance : guarda caché de estimadores\n(--keep-estimators)
 
 DataLoader ..> DataFrame : retorna dataset
 DataLoader ..> Series : retorna objetivo
+DataLoader ..> pyreadstat : lee archivos .sav
 
 Reports ..> DataFrame : consume resultados agregados
+Reports ..> SimpleDocTemplate : estructura documento PDF (ReportLab)
+Reports ..> Table : genera tablas en PDF
+Reports ..> Image : inserta figuras adicionales en PDF
 Reports ..> "CSV/JSON/LaTeX/PDF" : genera artefactos
+
+Analysis ..> Significance : ejecuta pruebas estadísticas\ny carga estimadores en caché
+Analysis ..> "matplotlib / seaborn" : genera learning curves, feature importance\ny distribuciones bootstrap
+Analysis ..> DataFrame : consume datos y resultados
+Analysis ..> DecisionTreeClassifier : visualiza árboles base
+
+Plots ..> "matplotlib / seaborn" : genera heatmaps F1-macro
+
+Eda ..> "matplotlib / seaborn" : genera gráficas exploratorias
+Eda ..> DataFrame : analiza distribuciones y correlaciones
+
+Significance ..> scipy.stats : calcula p-values (wilcoxon, chi2)
+Significance ..> joblib : serializa estimadores en caché
+Significance ..> ndarray : reconstruye predicciones por fold
 
 note bottom of Evaluation
   Evaluación anidada:
@@ -221,13 +296,27 @@ note bottom of Evaluation
   2. Ciclo interno: GridSearchCV o RandomizedSearchCV selecciona hiperparámetros.
   3. RandomizedSearchCV recibe distribuciones materializadas desde YAML.
   4. Métrica principal: f1_macro.
-  5. El ICN compara cada corrida experimento-modelo.
+  5. El ICN compara cada corrida experimento-modelo y calcula delta sesgo.
 end note
 
 note bottom of RobustStackingClassifier
   Stacking robusto:
   usa predicciones out-of-fold cuando el soporte por clase lo permite.
   Si una clase queda con soporte menor a 2, usa meta-features in-sample.
+end note
+
+note bottom of Analysis
+  Análisis avanzado y significancia:
+  1. Compara empíricamente Grid vs Random Search y Lab 3 vs Lab 4.
+  2. Evalúa estabilidad de hiperparámetros y métricas con Bootstrap CI.
+  3. Ejecuta tests de Wilcoxon firmado pareado y McNemar con corrección de Yates.
+  4. Utiliza caché de estimadores (joblib) para no reentrenar modelos.
+end note
+
+note bottom of Reports
+  Generación de reportes:
+  Produce tablas en CSV, JSON y LaTeX, y exporta reportes en PDF usando ReportLab,
+  incorporando automáticamente figuras comparativas si están disponibles.
 end note
 
 @enduml
